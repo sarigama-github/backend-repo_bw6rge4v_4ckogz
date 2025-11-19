@@ -50,6 +50,14 @@ class InquiryRequest(BaseModel):
     message: str
 
 
+class Announcement(BaseModel):
+    key: str = Field(..., description="Unique key for announcement")
+    title: str
+    message: str
+    tag: Optional[str] = Field(default=None, description="e.g., Offer, Update")
+    active: bool = True
+
+
 # -----------------------------
 # Utility seed data
 # -----------------------------
@@ -118,6 +126,23 @@ DEFAULT_SERVICES: List[ServiceItem] = [
     ),
 ]
 
+DEFAULT_ANNOUNCEMENTS: List[Announcement] = [
+    Announcement(
+        key="festive_offer",
+        title="Festive Offer",
+        message="Seasonal packages with complimentary reels on select bookings.",
+        tag="Offer",
+        active=True,
+    ),
+    Announcement(
+        key="studio_update",
+        title="Studio Update",
+        message="Now accepting limited winter wedding bookings in Nashik.",
+        tag="Update",
+        active=True,
+    ),
+]
+
 
 def ensure_services_seeded() -> None:
     if db is None:
@@ -127,6 +152,18 @@ def ensure_services_seeded() -> None:
         if not existing:
             for s in DEFAULT_SERVICES:
                 create_document("service", s.dict())
+    except Exception:
+        pass
+
+
+def ensure_announcements_seeded() -> None:
+    if db is None:
+        return
+    try:
+        existing = list(db["announcement"].find({}, {"key": 1}))
+        if not existing:
+            for a in DEFAULT_ANNOUNCEMENTS:
+                create_document("announcement", a.dict())
     except Exception:
         pass
 
@@ -144,15 +181,28 @@ def list_services():
     ensure_services_seeded()
     try:
         records = get_documents("service")
-        # Normalize ObjectId and fields
         services = []
         for r in records:
             r.pop("_id", None)
             services.append(r)
         return {"items": services}
     except Exception as e:
-        # If DB not available, fallback to defaults
         return {"items": [s.dict() for s in DEFAULT_SERVICES], "fallback": True, "error": str(e)[:120]}
+
+
+@app.get("/api/announcements")
+def list_announcements():
+    ensure_announcements_seeded()
+    try:
+        records = get_documents("announcement")
+        anns = []
+        for r in records:
+            if r.get("active", True):
+                r.pop("_id", None)
+                anns.append(r)
+        return {"items": anns}
+    except Exception as e:
+        return {"items": [a.dict() for a in DEFAULT_ANNOUNCEMENTS], "fallback": True, "error": str(e)[:120]}
 
 
 @app.post("/api/bookings")
@@ -161,7 +211,6 @@ def create_booking(booking: BookingRequest):
         raise HTTPException(status_code=503, detail="Database not available")
     try:
         booking_id = create_document("booking", booking.dict())
-        # Compose a WhatsApp confirmation message text
         msg = (
             f"New Booking Request - Pictiv.Studio%0A"
             f"Name: {booking.full_name}%0A"
